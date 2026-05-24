@@ -17,7 +17,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.security.GeneralSecurityException;
-import java.util.Collections;
 
 @Service
 public final class GoogleOAuthStrategy implements OAuthStrategy {
@@ -26,6 +25,9 @@ public final class GoogleOAuthStrategy implements OAuthStrategy {
 
     @Value("${google.client.id}")
     private String googleClientId;
+
+    @Value("${google.android.client.id:}")
+    private String googleAndroidClientId;
 
 
     @Autowired
@@ -115,25 +117,48 @@ public final class GoogleOAuthStrategy implements OAuthStrategy {
     // Updated method with @PostConstruct to ensure client ID is loaded from properties
     @PostConstruct
     public void initializeGoogleVerifier() {
-        // Try to get client ID from property, which should come from env variable
-        String clientId = googleClientId;
-        logger.info("Retrieved Google client ID from application properties: " + (clientId != null ? (clientId.substring(0, Math.min(10, clientId.length())) + "...") : "null"));
+        // Try to get iOS client ID from property, which should come from env variable
+        String iosClientId = googleClientId;
+        logger.info("Retrieved Google iOS client ID from application properties: " + (iosClientId != null ? (iosClientId.substring(0, Math.min(10, iosClientId.length())) + "...") : "null"));
 
         // If not set in property, try to get directly from environment
-        if (clientId == null || clientId.isEmpty()) {
-            clientId = System.getenv("GOOGLE_CLIENT_ID");
-            logger.info("Getting Google client ID directly from environment variable: " + (clientId != null ? (clientId.substring(0, Math.min(10, clientId.length())) + "...") : "null"));
+        if (iosClientId == null || iosClientId.isEmpty()) {
+            iosClientId = System.getenv("GOOGLE_CLIENT_ID");
+            logger.info("Getting Google iOS client ID directly from environment variable: " + (iosClientId != null ? (iosClientId.substring(0, Math.min(10, iosClientId.length())) + "...") : "null"));
         }
 
-        // Re-initialize Google ID token verifier with client ID from properties or environment
-        if (clientId != null && !clientId.isEmpty()) {
-            logger.info("Initializing Google token verifier with client ID: " + clientId);
+        // Try to get Android client ID from property
+        String androidClientId = googleAndroidClientId;
+        logger.info("Retrieved Google Android client ID from application properties: " + (androidClientId != null ? (androidClientId.substring(0, Math.min(10, androidClientId.length())) + "...") : "null"));
+
+        // If not set in property, try to get directly from environment
+        if (androidClientId == null || androidClientId.isEmpty()) {
+            androidClientId = System.getenv("GOOGLE_ANDROID_CLIENT_ID");
+            logger.info("Getting Google Android client ID directly from environment variable: " + (androidClientId != null ? (androidClientId.substring(0, Math.min(10, androidClientId.length())) + "...") : "null"));
+        }
+
+        // Build list of allowed client IDs
+        java.util.List<String> allowedClientIds = new java.util.ArrayList<>();
+        
+        if (iosClientId != null && !iosClientId.isEmpty()) {
+            allowedClientIds.add(iosClientId);
+            logger.info("Added iOS client ID to allowed audience");
+        }
+        
+        if (androidClientId != null && !androidClientId.isEmpty()) {
+            allowedClientIds.add(androidClientId);
+            logger.info("Added Android client ID to allowed audience");
+        }
+
+        // Re-initialize Google ID token verifier with client IDs from properties or environment
+        if (!allowedClientIds.isEmpty()) {
+            logger.info("Initializing Google token verifier with " + allowedClientIds.size() + " client ID(s)");
             this.verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory())
-                    .setAudience(Collections.singletonList(clientId))
+                    .setAudience(allowedClientIds)
                     .build();
-            logger.info("Google token verifier successfully initialized");
+            logger.info("Google token verifier successfully initialized with audience: " + allowedClientIds);
         } else {
-            logger.error("Google client ID not set, token verification will fail. Set GOOGLE_CLIENT_ID in your environment. clientId value: " + (clientId == null ? "null" : "empty string"));
+            logger.error("Google client IDs not set, token verification will fail. Set GOOGLE_CLIENT_ID and/or GOOGLE_ANDROID_CLIENT_ID in your environment.");
             // Create a dummy verifier that will reject all tokens
             this.verifier = new GoogleIdTokenVerifier.Builder(new NetHttpTransport(), new GsonFactory()).build();
             logger.warn("Created dummy verifier that will reject all tokens - Google OAuth will not work");
